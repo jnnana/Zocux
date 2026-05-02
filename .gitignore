@@ -1,0 +1,51 @@
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Tests / coverage / lint
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# IDEs / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs / local DBs
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Node (sdk/javascript)
+node_modules/
+package-lock.json
+.pnpm-store/
+
+# Local agent data (CSVs de inventario, etc.)
+examples/data/*.csv
+!examples/data/.gitkeep
