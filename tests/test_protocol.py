@@ -16,6 +16,15 @@ def _in_future(hours: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
 
 
+def _assert_err(body: dict, code: str) -> None:
+    """Strict check that the body is a structured error with the expected code."""
+    assert "error" in body, f"expected error, got {body}"
+    assert body["error"]["code"] == code, (
+        f"expected code={code}, got {body['error']}"
+    )
+    assert body["error"]["retryable"] is False
+
+
 async def _seed_offer(seller: str = "seller-1", **overrides) -> str:
     args = {
         "agent_id": seller,
@@ -112,7 +121,20 @@ async def test_propose_unknown_offer_errors():
         "proposed_delivery": _in_future(72),
         "expires_at": _in_future(24),
     }))
-    assert body.get("error") == "Offer not found"
+    _assert_err(body, "OFFER_NOT_FOUND")
+
+
+async def test_propose_by_seller_blocked():
+    offer_id = await _seed_offer(seller="seller-1")
+    body = _parse(await z.call_tool("propose_deal", {
+        "offer_id": offer_id,
+        "buyer_agent_id": "seller-1",
+        "proposed_price": 1.4,
+        "proposed_quantity": 50,
+        "proposed_delivery": _in_future(72),
+        "expires_at": _in_future(24),
+    }))
+    _assert_err(body, "AUTH_DENIED")
 
 
 async def test_propose_creates_proposal():
@@ -138,7 +160,7 @@ async def test_accept_only_by_seller():
         "proposal_id": proposal_id,
         "accepting_agent_id": "buyer-1",
     }))
-    assert "error" in body
+    _assert_err(body, "AUTH_DENIED")
 
 
 async def test_accept_happy_path_closes_deal_and_offer():
@@ -171,7 +193,7 @@ async def test_accept_twice_blocked():
         "proposal_id": proposal_id,
         "accepting_agent_id": "seller-1",
     }))
-    assert "error" in body
+    _assert_err(body, "PROPOSAL_ALREADY_RESOLVED")
 
 
 # ─── reject_deal ──────────────────────────────────────────────────────────────
@@ -195,7 +217,7 @@ async def test_reject_by_outsider_blocked():
         "rejecting_agent_id": "stranger",
         "reason": "no",
     }))
-    assert "error" in body
+    _assert_err(body, "AUTH_DENIED")
 
 
 # ─── counter_propose ──────────────────────────────────────────────────────────
@@ -225,7 +247,7 @@ async def test_counter_by_outsider_blocked():
         "counter_delivery": _in_future(72),
         "expires_at": _in_future(24),
     }))
-    assert "error" in body
+    _assert_err(body, "AUTH_DENIED")
 
 
 # ─── dispute_deal ─────────────────────────────────────────────────────────────
@@ -257,7 +279,7 @@ async def test_dispute_by_outsider_blocked():
         "disputing_agent_id": "stranger",
         "reason": "x",
     }))
-    assert "error" in body
+    _assert_err(body, "AUTH_DENIED")
 
 
 # ─── get_market_stats ─────────────────────────────────────────────────────────

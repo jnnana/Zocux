@@ -50,6 +50,99 @@ def text_result(obj: dict) -> list:
     return [TextContent(type="text", text=json.dumps(obj))]
 
 
+# ─── Canonical error vocabulary ───────────────────────────────────────────────
+# Closed enum. Agents branch on `code`, never on `hint`. `retryable=true` means
+# the same call may succeed later without a state change on the agent side
+# (e.g. a transient infra error — none of the v0.1 codes are retryable).
+
+class ErrorCode:
+    OFFER_NOT_FOUND = "OFFER_NOT_FOUND"
+    PROPOSAL_NOT_FOUND = "PROPOSAL_NOT_FOUND"
+    DEAL_NOT_FOUND = "DEAL_NOT_FOUND"
+    PROPOSAL_ALREADY_RESOLVED = "PROPOSAL_ALREADY_RESOLVED"
+    AUTH_DENIED = "AUTH_DENIED"
+    UNKNOWN_TOOL = "UNKNOWN_TOOL"
+
+
+def _err(code: str, hint: str | None = None, retryable: bool = False) -> list:
+    body: dict = {"error": {"code": code, "retryable": retryable}}
+    if hint:
+        body["error"]["hint"] = hint
+    return text_result(body)
+
+
+# ─── Tool descriptions (RFC-style, agent-readable) ────────────────────────────
+# Format is fixed: each line is `KEY: value`. Agents may parse this directly.
+# Keys: EFFECT, AUTH, IDEMPOTENT, FILTERS, RETURNS, ERRORS, NOTE.
+
+ANNOUNCE_DESC = (
+    "EFFECT: append ANNOUNCE to ledger; offer is active until `available_until`.\n"
+    "AUTH: any agent; caller becomes seller of the new offer.\n"
+    "IDEMPOTENT: yes via `idempotency_key` (scope: agent_id+ANNOUNCE).\n"
+    "RETURNS: {status, offer_id, message}; status ∈ {announced, duplicate}.\n"
+    "ERRORS: none."
+)
+
+DISCOVER_DESC = (
+    "EFFECT: read active offers matching filters; appends DISCOVER to ledger as search audit.\n"
+    "AUTH: any agent.\n"
+    "IDEMPOTENT: yes via `idempotency_key` for the audit row (scope: agent_id+DISCOVER).\n"
+    "FILTERS: `product` ILIKE substring (required); `max_price` upper bound; `location` substring; `certification_required` exact match.\n"
+    "RETURNS: {offers, count, market}; offers carry the full ANNOUNCE payload.\n"
+    "ERRORS: none."
+)
+
+PROPOSE_DESC = (
+    "EFFECT: append PROPOSE; cache proposal 24h in redis; await seller decision.\n"
+    "AUTH: any agent except the seller of the offer.\n"
+    "IDEMPOTENT: yes via `idempotency_key` (scope: buyer_agent_id+PROPOSE).\n"
+    "RETURNS: {status, proposal_id, message}; status ∈ {proposed, duplicate}.\n"
+    "ERRORS: OFFER_NOT_FOUND, AUTH_DENIED."
+)
+
+COUNTER_DESC = (
+    "EFFECT: append COUNTER on an open proposal; the proposal stays open with new terms tracked alongside it.\n"
+    "AUTH: seller of the underlying offer OR buyer that originated the proposal.\n"
+    "IDEMPOTENT: yes via `idempotency_key` (scope: agent_id+COUNTER).\n"
+    "RETURNS: {status, counter_id}; status ∈ {countered, duplicate}.\n"
+    "ERRORS: PROPOSAL_NOT_FOUND, PROPOSAL_ALREADY_RESOLVED, AUTH_DENIED."
+)
+
+ACCEPT_DESC = (
+    "EFFECT: append ACCEPT; insert closed_deals; offer becomes inactive; agreement is binding.\n"
+    "AUTH: only the seller of the offer underlying the proposal.\n"
+    "IDEMPOTENT: yes via `idempotency_key` (scope: accepting_agent_id+ACCEPT).\n"
+    "RETURNS: {status, deal_id, agreement, message}; status ∈ {deal_closed, duplicate}.\n"
+    "ERRORS: PROPOSAL_NOT_FOUND, OFFER_NOT_FOUND, PROPOSAL_ALREADY_RESOLVED, AUTH_DENIED."
+)
+
+REJECT_DESC = (
+    "EFFECT: append REJECT; proposal is closed; underlying offer remains active.\n"
+    "AUTH: seller of the offer OR buyer that originated the proposal.\n"
+    "IDEMPOTENT: yes via `idempotency_key` (scope: rejecting_agent_id+REJECT).\n"
+    "RETURNS: {status, reason}; status ∈ {rejected, duplicate}.\n"
+    "ERRORS: PROPOSAL_NOT_FOUND, PROPOSAL_ALREADY_RESOLVED, AUTH_DENIED."
+)
+
+DISPUTE_DESC = (
+    "EFFECT: append DISPUTE on a closed deal; flag for off-protocol resolution; affects reputation.\n"
+    "AUTH: seller or buyer of the deal.\n"
+    "IDEMPOTENT: yes via `idempotency_key` (scope: disputing_agent_id+DISPUTE).\n"
+    "RETURNS: {status}; status ∈ {disputed, duplicate}.\n"
+    "ERRORS: DEAL_NOT_FOUND, AUTH_DENIED.\n"
+    "NOTE: does not reverse the agreement; resolution is off-protocol."
+)
+
+STATS_DESC = (
+    "EFFECT: read aggregate market stats (deals_closed, total_volume_eur, active_offers).\n"
+    "AUTH: any agent.\n"
+    "IDEMPOTENT: n/a (read-only, no audit row).\n"
+    "FILTERS: optional `product` ILIKE substring.\n"
+    "RETURNS: {market, stats}.\n"
+    "ERRORS: none."
+)
+
+
 # ─── Append-only ledger with idempotency ──────────────────────────────────────
 
 async def log_message(msg_type: str, payload: dict, agent_id: str,
@@ -122,7 +215,7 @@ async def list_tools():
     return [
         Tool(
             name="announce_offer",
-            description="Announce availability of a product to the Zocux market",
+            description=ANNOUNCE_DESC,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -144,7 +237,7 @@ async def list_tools():
         ),
         Tool(
             name="discover_offers",
-            description="Search active offers in the Zocux market matching criteria",
+            description=DISCOVER_DESC,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -161,7 +254,7 @@ async def list_tools():
         ),
         Tool(
             name="propose_deal",
-            description="Submit a deal proposal on an active offer",
+            description=PROPOSE_DESC,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -180,7 +273,7 @@ async def list_tools():
         ),
         Tool(
             name="counter_propose",
-            description="Counter an existing proposal with new terms (seller or buyer of that proposal)",
+            description=COUNTER_DESC,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -199,7 +292,7 @@ async def list_tools():
         ),
         Tool(
             name="accept_deal",
-            description="Accept a proposal. Must be called by the seller of the underlying offer.",
+            description=ACCEPT_DESC,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -212,7 +305,7 @@ async def list_tools():
         ),
         Tool(
             name="reject_deal",
-            description="Reject a proposal. Must be called by seller or buyer of the proposal.",
+            description=REJECT_DESC,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -226,7 +319,7 @@ async def list_tools():
         ),
         Tool(
             name="dispute_deal",
-            description="Raise a dispute on a closed deal (seller or buyer of the deal).",
+            description=DISPUTE_DESC,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -241,7 +334,7 @@ async def list_tools():
         ),
         Tool(
             name="get_market_stats",
-            description="Get aggregated market statistics, optionally filtered by product",
+            description=STATS_DESC,
             inputSchema={
                 "type": "object",
                 "properties": {"product": {"type": "string"}},
@@ -300,7 +393,11 @@ async def call_tool(name: str, arguments: dict):
         async with pool.acquire() as conn:
             offer = await _load_offer(conn, arguments["offer_id"])
         if offer is None:
-            return text_result({"error": "Offer not found"})
+            return _err(ErrorCode.OFFER_NOT_FOUND,
+                        hint=f"offer_id={arguments['offer_id']}")
+        if arguments["buyer_agent_id"] == offer.get("agent_id"):
+            return _err(ErrorCode.AUTH_DENIED,
+                        hint="seller cannot propose against their own offer")
         proposal_id = str(uuid.uuid4())[:12]
         payload = {"proposal_id": proposal_id, "created_at": now_iso(), **arguments}
         stored, was_dup = await log_message("PROPOSE", payload,
@@ -317,14 +414,17 @@ async def call_tool(name: str, arguments: dict):
         async with pool.acquire() as conn:
             original = await _load_proposal(conn, arguments["proposal_id"])
             if original is None:
-                return text_result({"error": "Proposal not found"})
+                return _err(ErrorCode.PROPOSAL_NOT_FOUND,
+                            hint=f"proposal_id={arguments['proposal_id']}")
             if await _proposal_resolved(conn, arguments["proposal_id"]):
-                return text_result({"error": "Proposal already accepted or rejected"})
+                return _err(ErrorCode.PROPOSAL_ALREADY_RESOLVED,
+                            hint=f"proposal_id={arguments['proposal_id']}")
             offer = await _load_offer(conn, original["offer_id"])
         seller_id = (offer or {}).get("agent_id")
         buyer_id = original.get("buyer_agent_id")
         if arguments["agent_id"] not in (seller_id, buyer_id):
-            return text_result({"error": "Counter must come from seller or buyer of the proposal"})
+            return _err(ErrorCode.AUTH_DENIED,
+                        hint=f"caller={arguments['agent_id']}; allowed=seller({seller_id}) or buyer({buyer_id})")
         counter_id = str(uuid.uuid4())[:12]
         payload = {"counter_id": counter_id, "created_at": now_iso(), **arguments}
         stored, was_dup = await log_message("COUNTER", payload, arguments["agent_id"], idem)
@@ -337,14 +437,18 @@ async def call_tool(name: str, arguments: dict):
         async with pool.acquire() as conn:
             proposal = await _load_proposal(conn, arguments["proposal_id"])
             if proposal is None:
-                return text_result({"error": "Proposal not found"})
+                return _err(ErrorCode.PROPOSAL_NOT_FOUND,
+                            hint=f"proposal_id={arguments['proposal_id']}")
             if await _proposal_resolved(conn, arguments["proposal_id"]):
-                return text_result({"error": "Proposal already resolved"})
+                return _err(ErrorCode.PROPOSAL_ALREADY_RESOLVED,
+                            hint=f"proposal_id={arguments['proposal_id']}")
             offer = await _load_offer(conn, proposal["offer_id"])
             if offer is None:
-                return text_result({"error": "Underlying offer not found"})
+                return _err(ErrorCode.OFFER_NOT_FOUND,
+                            hint=f"offer_id={proposal['offer_id']}")
             if arguments["accepting_agent_id"] != offer.get("agent_id"):
-                return text_result({"error": "Only the seller of the offer can accept"})
+                return _err(ErrorCode.AUTH_DENIED,
+                            hint=f"caller={arguments['accepting_agent_id']}; allowed=seller({offer.get('agent_id')})")
 
             deal_id = str(uuid.uuid4())[:12]
             accept_payload = {
@@ -386,14 +490,17 @@ async def call_tool(name: str, arguments: dict):
         async with pool.acquire() as conn:
             proposal = await _load_proposal(conn, arguments["proposal_id"])
             if proposal is None:
-                return text_result({"error": "Proposal not found"})
+                return _err(ErrorCode.PROPOSAL_NOT_FOUND,
+                            hint=f"proposal_id={arguments['proposal_id']}")
             if await _proposal_resolved(conn, arguments["proposal_id"]):
-                return text_result({"error": "Proposal already resolved"})
+                return _err(ErrorCode.PROPOSAL_ALREADY_RESOLVED,
+                            hint=f"proposal_id={arguments['proposal_id']}")
             offer = await _load_offer(conn, proposal["offer_id"])
         seller_id = (offer or {}).get("agent_id")
         buyer_id = proposal.get("buyer_agent_id")
         if arguments["rejecting_agent_id"] not in (seller_id, buyer_id):
-            return text_result({"error": "Only seller or buyer of the proposal can reject"})
+            return _err(ErrorCode.AUTH_DENIED,
+                        hint=f"caller={arguments['rejecting_agent_id']}; allowed=seller({seller_id}) or buyer({buyer_id})")
         payload = {"rejected_at": now_iso(), **arguments}
         stored, was_dup = await log_message("REJECT", payload,
                                             arguments["rejecting_agent_id"], idem)
@@ -411,9 +518,12 @@ async def call_tool(name: str, arguments: dict):
                 arguments["deal_id"],
             )
         if row is None:
-            return text_result({"error": "Deal not found"})
+            return _err(ErrorCode.DEAL_NOT_FOUND,
+                        hint=f"deal_id={arguments['deal_id']}")
         if arguments["disputing_agent_id"] not in (row["seller_agent_id"], row["buyer_agent_id"]):
-            return text_result({"error": "Only seller or buyer of the deal can dispute"})
+            return _err(ErrorCode.AUTH_DENIED,
+                        hint=(f"caller={arguments['disputing_agent_id']}; "
+                              f"allowed=seller({row['seller_agent_id']}) or buyer({row['buyer_agent_id']})"))
         payload = {"created_at": now_iso(), **arguments}
         stored, was_dup = await log_message("DISPUTE", payload,
                                             arguments["disputing_agent_id"], idem)
@@ -444,7 +554,7 @@ async def call_tool(name: str, arguments: dict):
             },
         })
 
-    return text_result({"error": f"Unknown tool: {name}"})
+    return _err(ErrorCode.UNKNOWN_TOOL, hint=f"name={name}")
 
 
 async def main():

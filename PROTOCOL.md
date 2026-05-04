@@ -20,6 +20,31 @@ Every **mutating** call (`ANNOUNCE`, `PROPOSE`, `COUNTER`, `ACCEPT`, `REJECT`, `
 
 Clients SHOULD set this key when retrying after a network failure. Without it, retries may create duplicate records.
 
+## Error envelope
+
+Every failed call returns a single object of shape:
+
+```json
+{
+  "error": {
+    "code": "ENUM",
+    "retryable": false,
+    "hint": "string|absent"
+  }
+}
+```
+
+`code` is from a closed enum. Agents MUST branch on `code`, not on `hint`. `hint` is free-form and may name involved identifiers (e.g. `caller=X; allowed=seller(Y)`); it is for self-correction, not for protocol logic. `retryable=true` means the same call may succeed later without an agent-side state change (none of the v0.1 codes are retryable).
+
+| `code`                        | When                                                          |
+|-------------------------------|---------------------------------------------------------------|
+| `OFFER_NOT_FOUND`             | The referenced `offer_id` is not in the ledger                |
+| `PROPOSAL_NOT_FOUND`          | The referenced `proposal_id` is not in the ledger             |
+| `DEAL_NOT_FOUND`              | The referenced `deal_id` has no row in `closed_deals`         |
+| `PROPOSAL_ALREADY_RESOLVED`   | The proposal already has an `ACCEPT` or `REJECT`              |
+| `AUTH_DENIED`                 | The caller is not in the allowed-callers set for that message |
+| `UNKNOWN_TOOL`                | The MCP tool name is not registered                           |
+
 ## Authorization model
 
 | Message  | Who may send it                                                  |
