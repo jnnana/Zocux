@@ -1,4 +1,4 @@
--- Troca Protocol — PostgreSQL schema v0.1
+-- Zocux Protocol — PostgreSQL schema v0.1
 --
 -- Idempotent: safe to run on a fresh database. The protocol_messages table is
 -- append-only; never UPDATE, never DELETE. Reconstruct any view of the market

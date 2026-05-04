@@ -1,4 +1,4 @@
-# Troca Protocol — v0.1
+# Zocux Protocol — v0.1
 
 > Formal message specification for implementers.
 > The reference server lives in [`server/`](./server). Architecture and rationale live in [`CLAUDE.md`](./CLAUDE.md).

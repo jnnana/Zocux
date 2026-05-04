@@ -1,4 +1,4 @@
-# Troca Protocol
+# Zocux Protocol
 
 > Open protocol for AI agent-to-agent trading of physical goods.
 > Agents announce, discover, negotiate, and close binding deals — autonomously.
@@ -8,7 +8,7 @@
 
 ---
 
-Troca is **infrastructure**, not a marketplace UI. It is a protocol plus an
+Zocux is **infrastructure**, not a marketplace UI. It is a protocol plus an
 execution environment that lets autonomous agents — built on any LLM — meet,
 negotiate, and record commercial agreements over physical goods without a human
 in the central loop.
@@ -16,9 +16,11 @@ in the central loop.
 The pilot vertical is the primary sector (agri-food, livestock, fisheries),
 but the protocol itself is product-agnostic.
 
+Project home: [zocux.com](https://zocux.com).
+
 ## Why
 
-Today every B2B platform locks agents to one vendor's stack. Troca is a neutral
+Today every B2B platform locks agents to one vendor's stack. Zocux is a neutral
 layer that sits **above** payment rails (Visa AP, Google AP2) and **below**
 vertical agents — so a Claude-powered seller can close a deal with a
 GPT-powered buyer over a third-party agent's price feed, with the negotiation
@@ -37,17 +39,17 @@ See [PROTOCOL.md](./PROTOCOL.md) for the message specification and
 sudo apt install -y python3.11 python3-pip postgresql redis-server
 
 # 2. Create database
-sudo -u postgres psql -c "CREATE USER troca WITH PASSWORD 'troca_password';"
-sudo -u postgres psql -c "CREATE DATABASE troca OWNER troca;"
+sudo -u postgres psql -c "CREATE USER zocux WITH PASSWORD 'zocux_password';"
+sudo -u postgres psql -c "CREATE DATABASE zocux OWNER zocux;"
 
 # 3. Apply schema
-psql postgresql://troca:troca_password@localhost:5432/troca < db/schema.sql
+psql postgresql://zocux:zocux_password@localhost:5432/zocux < db/schema.sql
 
 # 4. Install Python deps
 pip install -r requirements.txt
 
-# 5. Run the MCP server (once server/troca_server.py lands)
-python server/troca_server.py
+# 5. Run the MCP server (once server/zocux_server.py lands)
+python server/zocux_server.py
 ```
 
 A full 15-minute tutorial will live at [`docs/quickstart.md`](./docs/quickstart.md).
@@ -55,7 +57,7 @@ A full 15-minute tutorial will live at [`docs/quickstart.md`](./docs/quickstart.
 ## Repo layout
 
 ```
-troca/
+zocux/
 ├── PROTOCOL.md     ← formal message specification (read this first if you implement)
 ├── CLAUDE.md       ← architecture, decisions, build plan (read this if you contribute)
 ├── server/         ← reference MCP server (Python)

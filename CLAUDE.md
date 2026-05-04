@@ -1,17 +1,17 @@
-# CLAUDE.md — Troca Protocol
-> Instrucciones para el agente constructor autónomo de Troca
+# CLAUDE.md — Zocux Protocol
+> Instrucciones para el agente constructor autónomo de Zocux
 
 ---
 
-## Qué es Troca
+## Qué es Zocux
 
-Troca es infraestructura de mercado donde agentes IA de distintos orígenes pueden anunciarse, descubrirse, negociar y cerrar acuerdos económicos sobre producto físico — sin intervención humana en el loop central.
+Zocux es infraestructura de mercado donde agentes IA de distintos orígenes pueden anunciarse, descubrirse, negociar y cerrar acuerdos económicos sobre producto físico — sin intervención humana en el loop central.
 
 No es un marketplace con interfaz. Es un **protocolo + entorno de ejecución** para agentes.
 
 El sector primario (agroalimentario, ganadería, pesca) es el mercado piloto. El protocolo es universal.
 
-**Posicionamiento estratégico**: Troca es la capa que se sienta encima de los protocolos de pago (Visa/AWS, Google AP2) y debajo de los agentes verticales. Infraestructura neutral, no aplicación. Objetivo a 18 meses: ser adquirible por Mirakl, SAP Ariba, AWS o cooperativas grandes.
+**Posicionamiento estratégico**: Zocux es la capa que se sienta encima de los protocolos de pago (Visa/AWS, Google AP2) y debajo de los agentes verticales. Infraestructura neutral, no aplicación. Objetivo a 18 meses: ser adquirible por Mirakl, SAP Ariba, AWS o cooperativas grandes.
 
 ---
 
@@ -181,14 +181,14 @@ Señal de incumplimiento post-acuerdo.
 ## Estructura del repositorio
 
 ```
-troca-protocol/
+zocux-protocol/
 ├── CLAUDE.md                  ← Este archivo
 ├── README.md                  ← Documentación pública
 ├── PROTOCOL.md                ← Especificación formal del protocolo
 ├── LICENSE                    ← MIT
 │
 ├── server/
-│   ├── troca_server.py        ← Servidor MCP principal
+│   ├── zocux_server.py        ← Servidor MCP principal
 │   ├── matching_engine.py     ← Motor de matching oferta/demanda
 │   ├── registry.py            ← Registro append-only de mensajes
 │   └── reputation.py          ← Sistema de reputación de agentes
@@ -308,7 +308,7 @@ GROUP BY agent_id;
 ## Servidor MCP — implementación completa
 
 ```python
-# server/troca_server.py
+# server/zocux_server.py
 
 import asyncio
 import json
@@ -322,13 +322,13 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
-app = Server("troca-market")
+app = Server("zocux-market")
 
 # Conexiones globales (inicializadas perezosamente)
 db_pool = None
 redis_client = None
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://troca:troca@localhost/troca")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://zocux:zocux@localhost/zocux")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 # ─── Helpers de conexión y utilidades ─────────────────────────────────────────
@@ -425,7 +425,7 @@ async def list_tools():
     return [
         Tool(
             name="announce_offer",
-            description="Announce availability of a product to the Troca market",
+            description="Announce availability of a product to the Zocux market",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -447,7 +447,7 @@ async def list_tools():
         ),
         Tool(
             name="discover_offers",
-            description="Search active offers in the Troca market matching criteria",
+            description="Search active offers in the Zocux market matching criteria",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -566,7 +566,7 @@ async def call_tool(name: str, arguments: dict):
         return text_result({
             "status": "duplicate" if was_dup else "announced",
             "offer_id": stored["offer_id"],
-            "message": f"Offer {stored['offer_id']} is live in the Troca market"
+            "message": f"Offer {stored['offer_id']} is live in the Zocux market"
         })
 
     if name == "discover_offers":
@@ -597,7 +597,7 @@ async def call_tool(name: str, arguments: dict):
                           {"created_at": now_iso(), **arguments},
                           arguments["agent_id"], idem)
         return text_result({"offers": offers, "count": len(offers),
-                            "market": "troca-protocol-v0.1"})
+                            "market": "zocux-protocol-v0.1"})
 
     if name == "propose_deal":
         async with pool.acquire() as conn:
@@ -739,7 +739,7 @@ async def call_tool(name: str, arguments: dict):
                     "SELECT COALESCE(SUM(final_price * final_quantity), 0) FROM closed_deals")
                 active_offers = await conn.fetchval("SELECT COUNT(*) FROM active_offers")
         return text_result({
-            "market": "troca-protocol-v0.1",
+            "market": "zocux-protocol-v0.1",
             "stats": {
                 "deals_closed": int(total_deals),
                 "total_volume_eur": float(total_volume),
@@ -763,7 +763,7 @@ if __name__ == "__main__":
 
 ```bash
 # .env — nunca commitear este archivo
-DATABASE_URL=postgresql://troca:troca_password@localhost:5432/troca
+DATABASE_URL=postgresql://zocux:zocux_password@localhost:5432/zocux
 REDIS_URL=redis://localhost:6379
 ANTHROPIC_API_KEY=sk-ant-...
 TROCA_ENV=development   # development | production
@@ -779,8 +779,8 @@ TROCA_VERSION=0.1.0
 sudo apt update && sudo apt install -y python3.11 python3-pip postgresql redis-server
 
 # 2. Crear base de datos
-sudo -u postgres psql -c "CREATE USER troca WITH PASSWORD 'troca_password';"
-sudo -u postgres psql -c "CREATE DATABASE troca OWNER troca;"
+sudo -u postgres psql -c "CREATE USER zocux WITH PASSWORD 'zocux_password';"
+sudo -u postgres psql -c "CREATE DATABASE zocux OWNER zocux;"
 
 # 3. Aplicar schema
 psql $DATABASE_URL < db/schema.sql
@@ -789,7 +789,7 @@ psql $DATABASE_URL < db/schema.sql
 pip install mcp asyncpg redis anthropic python-dotenv
 
 # 5. Verificar que el servidor arranca
-python server/troca_server.py
+python server/zocux_server.py
 
 # 6. Test rápido (en otra terminal)
 python examples/negotiation_demo.py
@@ -802,11 +802,11 @@ python examples/negotiation_demo.py
 ```json
 {
   "mcpServers": {
-    "troca": {
+    "zocux": {
       "command": "python",
-      "args": ["/ruta/a/troca-protocol/server/troca_server.py"],
+      "args": ["/ruta/a/zocux-protocol/server/zocux_server.py"],
       "env": {
-        "DATABASE_URL": "postgresql://troca:troca_password@localhost:5432/troca",
+        "DATABASE_URL": "postgresql://zocux:zocux_password@localhost:5432/zocux",
         "REDIS_URL": "redis://localhost:6379"
       }
     }
@@ -854,7 +854,7 @@ Estas reglas son absolutas. Seguirlas en cada decisión técnica.
 **v0.1 (transporte stdio MCP)**: el servidor confía en el `agent_id` que el cliente declara. El modelo de amenaza es "una sola organización confía en sus propios agentes locales". Aceptable solo para desarrollo y demos.
 
 **Antes de exponer la API REST pública (Paso 5 / Fase 2)**, son requisitos bloqueantes:
-- **Identidad de agente verificable**: cada agente recibe un `agent_id` ligado a una credencial (API key firmada por Troca o JWT vía OIDC). El servidor rechaza cualquier mensaje cuyo `agent_id` no coincida con la credencial presentada.
+- **Identidad de agente verificable**: cada agente recibe un `agent_id` ligado a una credencial (API key firmada por Zocux o JWT vía OIDC). El servidor rechaza cualquier mensaje cuyo `agent_id` no coincida con la credencial presentada.
 - **Rate limiting** por `agent_id` (token bucket; defaults sugeridos: 60 ANNOUNCE/h, 600 DISCOVER/h, 120 PROPOSE/h).
 - **TLS obligatorio** en todos los endpoints HTTP.
 - **CORS restrictivo**: solo orígenes de SDKs registrados.
@@ -884,7 +884,7 @@ Construye en este orden exacto. No avanzar al siguiente paso sin que el anterior
 ```
 PASO 1 — Fundamentos (Fase 0)
   [ ] db/schema.sql completo con todos los índices
-  [ ] server/troca_server.py con las 6 herramientas MCP
+  [ ] server/zocux_server.py con las 6 herramientas MCP
   [ ] tests/test_protocol.py con casos básicos
   [ ] README.md con tutorial de instalación
 
@@ -910,7 +910,7 @@ PASO 3 — Agente de referencia (Fase 1b)
       - Demo completa vendedor↔comprador en una sola ejecución
 
 PASO 4 — SDK cliente (Fase 2)
-  [ ] sdk/python/troca_client.py
+  [ ] sdk/python/zocux_client.py
       - Wrapper sobre las herramientas MCP
       - Instalable via pip
   [ ] sdk/javascript/index.js
@@ -939,7 +939,7 @@ PASO 5 — API REST pública (Fase 2)
   - > 100.000€ → 0,2% negociable
 - **Servicios premium**: 99–499€/mes para analytics, SLA, historial extendido.
 
-El activo más valioso no es el código — es el dataset de negociaciones reales. Cada transacción registrada con su payload completo es propiedad intelectual de Troca.
+El activo más valioso no es el código — es el dataset de negociaciones reales. Cada transacción registrada con su payload completo es propiedad intelectual de Zocux.
 
 ---
 
@@ -951,7 +951,7 @@ El objetivo no es crecer indefinidamente de forma independiente. Es ser adquirib
 2. **AWS / Google Cloud** — necesitan casos de uso verticales reales de agentic commerce
 3. **Cooperativas o traders grandes** — Louis Dreyfus, Agrimp, operadores españoles
 
-Lo que hace a Troca adquirible: protocolo documentado públicamente, dataset de transacciones reales, arquitectura integrable en cualquier stack empresarial en menos de 3 meses.
+Lo que hace a Zocux adquirible: protocolo documentado públicamente, dataset de transacciones reales, arquitectura integrable en cualquier stack empresarial en menos de 3 meses.
 
 ---
 
@@ -970,5 +970,5 @@ Cuando arranques, crea estas issues en GitHub en este orden:
 
 ---
 
-*Troca Protocol v0.1 — MIT License*
-*Repositorio: github.com/jnnan/Troca*
+*Zocux Protocol v0.1 — MIT License*
+*Repositorio: github.com/jnnan/Zocux*
