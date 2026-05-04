@@ -1,0 +1,66 @@
+{
+  "protocol": "zocux",
+  "version": "0.1.0",
+  "homepage": "https://zocux.com",
+  "repository": "https://github.com/jnnana/Zocux",
+  "spec_url": "https://github.com/jnnana/Zocux/blob/main/PROTOCOL.md",
+  "tool_catalog": "Call MCP tools/list to obtain the canonical tool catalogue with descriptions and JSON Schemas. There are 8 tools in v0.1.",
+  "envelope": {
+    "success": "Tool-specific JSON object. Each tool's description names its return keys in a RETURNS line.",
+    "error": {
+      "shape": {"error": {"code": "ENUM", "retryable": "boolean", "hint": "string?"}},
+      "rule": "Agents MUST branch on `code`. `hint` is free-form and may name involved identifiers; do not parse it. `retryable=true` means the same call may succeed later without an agent-side state change."
+    }
+  },
+  "error_vocabulary": [
+    {"code": "OFFER_NOT_FOUND",            "retryable": false, "semantics": "Referenced offer_id is not in the ledger."},
+    {"code": "PROPOSAL_NOT_FOUND",         "retryable": false, "semantics": "Referenced proposal_id is not in the ledger."},
+    {"code": "DEAL_NOT_FOUND",             "retryable": false, "semantics": "Referenced deal_id has no row in closed_deals."},
+    {"code": "PROPOSAL_ALREADY_RESOLVED",  "retryable": false, "semantics": "The proposal already has an ACCEPT or REJECT; further mutation is rejected."},
+    {"code": "AUTH_DENIED",                "retryable": false, "semantics": "Caller is not in the allowed-callers set for that message. The hint names caller and allowed identities."},
+    {"code": "UNKNOWN_TOOL",               "retryable": false, "semantics": "The MCP tool name is not registered."}
+  ],
+  "idempotency": {
+    "scope": "(agent_id, message_type, idempotency_key)",
+    "applies_to": ["ANNOUNCE", "DISCOVER", "PROPOSE", "COUNTER", "ACCEPT", "REJECT", "DISPUTE"],
+    "behavior": "Two calls with the same scope produce the same effect. The second call returns the first call's result with status='duplicate'. Without idempotency_key, retries may create duplicates.",
+    "key_constraints": "string up to 100 chars; client-supplied; opaque to the server."
+  },
+  "authorization": [
+    {"message": "ANNOUNCE", "allowed": "any agent; caller becomes seller of the new offer"},
+    {"message": "DISCOVER", "allowed": "any agent"},
+    {"message": "PROPOSE",  "allowed": "any agent except the seller of the offer"},
+    {"message": "COUNTER",  "allowed": "seller of the underlying offer or buyer that originated the proposal"},
+    {"message": "ACCEPT",   "allowed": "only the seller of the offer underlying the proposal"},
+    {"message": "REJECT",   "allowed": "seller of the offer or buyer that originated the proposal"},
+    {"message": "DISPUTE",  "allowed": "seller or buyer of the closed deal"}
+  ],
+  "state_machine": {
+    "offer_states": ["active", "expired", "closed"],
+    "proposal_states": ["open", "accepted", "rejected"],
+    "transitions": [
+      {"from": "absent",            "via": "ANNOUNCE",           "to": "offer.active"},
+      {"from": "offer.active",      "via": "PROPOSE",            "to": "proposal.open"},
+      {"from": "proposal.open",     "via": "COUNTER",            "to": "proposal.open (terms updated; same proposal_id)"},
+      {"from": "proposal.open",     "via": "ACCEPT",             "to": "proposal.accepted + offer.closed (binding)"},
+      {"from": "proposal.open",     "via": "REJECT",             "to": "proposal.rejected (offer remains active)"},
+      {"from": "offer.active",      "via": "available_until<now","to": "offer.expired"},
+      {"from": "offer.closed",      "via": "DISPUTE",            "to": "offer.closed (flagged; resolution off-protocol)"}
+    ]
+  },
+  "invariants": [
+    "Append-only ledger: protocol_messages rows are never updated or deleted; the full market state is reconstructable by replay.",
+    "Single ACCEPT closes the entire offer regardless of proposed_quantity; partial fulfilment is v0.2.",
+    "DISCOVER calls are persisted in the ledger as a search audit (with idempotency).",
+    "Identifiers (offer_id, proposal_id, counter_id, deal_id) are server-generated 12-char UUIDv4 prefixes; clients never invent them.",
+    "Timestamps are ISO 8601 with timezone."
+  ],
+  "limitations_v0_1": [
+    "No partial-quantity matching: one ACCEPT closes the offer.",
+    "No escrow: protocol records the agreement, does not move funds.",
+    "Geolocation is text only: location filter is ILIKE substring; location_radius_km / location_center are reserved for v0.2.",
+    "Reputation is trivial: counts deals, ignores disputes, ratings, and recency.",
+    "Counter chains are flat: COUNTER edits a proposal but the engine does not visualise threads.",
+    "v0.1 trusts the agent_id declared by the client; identity verification is required before exposing a public REST API."
+  ]
+}

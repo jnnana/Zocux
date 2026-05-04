@@ -10,6 +10,7 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import asyncpg
 import redis.asyncio as aioredis
@@ -24,6 +25,8 @@ redis_client = None
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://zocux:zocux@localhost/zocux")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+
+MANIFEST_PATH = Path(__file__).resolve().parent.parent / "manifest.json"
 
 
 # ─── Connection helpers ───────────────────────────────────────────────────────
@@ -140,6 +143,16 @@ STATS_DESC = (
     "FILTERS: optional `product` ILIKE substring.\n"
     "RETURNS: {market, stats}.\n"
     "ERRORS: none."
+)
+
+MANIFEST_DESC = (
+    "EFFECT: read the canonical protocol manifest. Call this once at session start.\n"
+    "AUTH: any agent.\n"
+    "IDEMPOTENT: n/a (read-only, no audit row).\n"
+    "RETURNS: full manifest object covering envelope, error_vocabulary, idempotency, "
+    "authorization, state_machine, invariants, limitations_v0_1.\n"
+    "ERRORS: none.\n"
+    "NOTE: tool catalogue itself is not duplicated here; use MCP tools/list."
 )
 
 
@@ -339,6 +352,11 @@ async def list_tools():
                 "type": "object",
                 "properties": {"product": {"type": "string"}},
             },
+        ),
+        Tool(
+            name="get_protocol_manifest",
+            description=MANIFEST_DESC,
+            inputSchema={"type": "object", "properties": {}},
         ),
     ]
 
@@ -553,6 +571,10 @@ async def call_tool(name: str, arguments: dict):
                 "active_offers": int(active_offers),
             },
         })
+
+    if name == "get_protocol_manifest":
+        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        return text_result(manifest)
 
     return _err(ErrorCode.UNKNOWN_TOOL, hint=f"name={name}")
 

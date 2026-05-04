@@ -300,3 +300,33 @@ async def test_market_stats_after_deal():
     body = _parse(await z.call_tool("get_market_stats", {}))
     assert body["stats"]["deals_closed"] == 1
     assert body["stats"]["total_volume_eur"] == 20.0
+
+
+# ─── get_protocol_manifest ────────────────────────────────────────────────────
+
+async def test_manifest_shape():
+    body = _parse(await z.call_tool("get_protocol_manifest", {}))
+    assert body["protocol"] == "zocux"
+    assert body["version"] == "0.1.0"
+    for key in ("envelope", "error_vocabulary", "idempotency",
+                "authorization", "state_machine", "invariants",
+                "limitations_v0_1"):
+        assert key in body, f"manifest missing key: {key}"
+
+
+async def test_manifest_error_codes_match_server():
+    body = _parse(await z.call_tool("get_protocol_manifest", {}))
+    declared = {row["code"] for row in body["error_vocabulary"]}
+    enforced = {
+        z.ErrorCode.OFFER_NOT_FOUND,
+        z.ErrorCode.PROPOSAL_NOT_FOUND,
+        z.ErrorCode.DEAL_NOT_FOUND,
+        z.ErrorCode.PROPOSAL_ALREADY_RESOLVED,
+        z.ErrorCode.AUTH_DENIED,
+        z.ErrorCode.UNKNOWN_TOOL,
+    }
+    assert declared == enforced, (
+        f"manifest error_vocabulary drifted from server ErrorCode enum:\n"
+        f"  manifest only: {declared - enforced}\n"
+        f"  server only:   {enforced - declared}"
+    )
